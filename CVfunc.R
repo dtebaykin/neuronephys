@@ -46,8 +46,7 @@ runCV <- function(df, model, formula, model_args, predict_args, splitNN = F, uni
     formula = gsub("1\\+", "", rf_formula)
   }
   
-  result_r2 = c()
-  result_mse = c()
+  result = list()
   
   for (k in 1:10) {
     print(paste0("Fold #", k))
@@ -55,9 +54,11 @@ runCV <- function(df, model, formula, model_args, predict_args, splitNN = F, uni
     fit = do.call(model, c(list(formula = as.formula(formula), data = run_data[run_data$fold != k,]), model_args) )
     pred = as.vector(do.call(predict, c(list(fit, newdata = run_data[run_data$fold == k,]), predict_args)))
     
-    result_r2 = c(result_r2, get_R2(run_data[run_data$fold == k, ep], pred))
-    result_mse = c(result_mse, mse(run_data[run_data$fold == k, ep], pred))
+    result[[k]] = list(fold = k, 
+                      r2 = get_R2(run_data[run_data$fold == k, ep], pred),
+                      mse = mse(run_data[run_data$fold == k, ep], pred),
+                      vals = data.frame(Pmid = run_data[run_data$fold == k, "Pmid"], obs = run_data[run_data$fold == k, ep], pred = pred) )
   }
   
-  return(data.frame(fold = 1:10, r2 = result_r2, mse = result_mse))
+  return(result)
 }
