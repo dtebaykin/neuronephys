@@ -6,8 +6,8 @@
 #   formula - String, Example: "rmp ~ NeuronName"
 #   model_args - additional arguments to be passed on to the model (besides data and formula)
 #   predict_args - additional arguments to be passed on to the fitting of model
-#   splitNN - **important** expands NeuronName column into a matrix with each NeuronName being a column, required for randomForest that use NeuronName in model
 #   unique - force each fold to have unique articles
+#   seed - enforce the splits to 'random' the same way each time, default - random seed between 1 and 10^5
 #
 # Output:
 #   the original input data.frame with added columns: fold, pred
@@ -18,7 +18,7 @@ get_R2 <- function(obs, pred) {
 }
 
 # Main function of the script - returns input data.frame with pred and fold columns
-runCV <- function(df, model, formula, model_args, predict_args, splitNN = T, unique = T, seed = 42) {
+runCV <- function(df, model, formula, model_args, predict_args, unique = T, seed = sample(floor(runif(1, 1, 100001)), 1)) {
   set.seed(seed)
   
   # Misc
