@@ -10,14 +10,22 @@
 #   unique - force each fold to have unique articles
 #
 # Output:
-#   a data.frame with R^2 and Mean Squared Errors for each fold
+#   the original input data.frame with added columns: fold, pred
 
+# This function returns R^2 value, inputs are 2 numerical vectors of equal length: observed values and predicted
 get_R2 <- function(obs, pred) {
   1 - sum((obs - pred)^2) / sum((obs - mean(obs))^2 )
 }
 
-runCV <- function(df, model, formula, model_args, predict_args, splitNN = F, unique = F) {
+# Main function of the script - returns input data.frame with pred and fold columns
+runCV <- function(df, model, formula, model_args, predict_args, splitNN = T, unique = T, seed = 42) {
+  set.seed(seed)
+  
+  # Misc
   ep = gsub("\\s*~\\s*.*", "", formula)
+  df$index = 1:nrow(df)
+  
+  # Filter out NA's in the ephys property we are predicting and reshuffle whatever is left
   run_data = df[!is.na(df[, ep]),]
   run_data = run_data[sample(nrow(run_data)),]
   
@@ -34,31 +42,39 @@ runCV <- function(df, model, formula, model_args, predict_args, splitNN = F, uni
     run_data$fold = rep(1:10, length.out = nrow(run_data))
   }
   
-  if (splitNN & grepl("NeuronName", formula)) {
-    rf_formula = gsub("NeuronName", "1", formula)
-    run_data$NeuronName = droplevels(run_data$NeuronName)
+  # Convert NeuronName column into a matrix where each NeuronName is a column, adjust the formula accordingly
+  rf_formula = gsub("NeuronName", "1", formula)
+  run_data$NeuronName = droplevels(run_data$NeuronName)
 
-    for(level in unique(run_data$NeuronName)){
-      run_data[paste("NeuronName", make.names(level), sep = "_")] <- ifelse(run_data$NeuronName == level, 1, 0)
-      rf_formula = paste(rf_formula, paste("NeuronName", make.names(level), sep = "_"), sep = "+")
-    }
-    run_data$NeuronName = NULL
-    formula = gsub("1\\+", "", rf_formula)
+  for(level in unique(run_data$NeuronName)){
+    run_data[paste("NeuronName", make.names(level), sep = "_")] <- ifelse(run_data$NeuronName == level, 1, 0)
+    rf_formula = paste(rf_formula, paste("NeuronName", make.names(level), sep = "_"), sep = "+")
   }
+  run_data$NeuronName = NULL
+  formula = gsub("1\\+", "", rf_formula)
   
-  result = list()
-  
+  # Run the model for each of 10 folds
+  run_data$pred = NA
   for (k in 1:10) {
     print(paste0("Fold #", k))
     
     fit = do.call(model, c(list(formula = as.formula(formula), data = run_data[run_data$fold != k,]), model_args) )
-    pred = as.vector(do.call(predict, c(list(fit, newdata = run_data[run_data$fold == k,]), predict_args)))
-    
-    result[[k]] = list(fold = k, 
-                      r2 = get_R2(run_data[run_data$fold == k, ep], pred),
-                      mse = mse(run_data[run_data$fold == k, ep], pred),
-                      vals = data.frame(Pmid = run_data[run_data$fold == k, "Pmid"], obs = run_data[run_data$fold == k, ep], pred = pred) )
+    run_data[run_data$fold == k,]$pred = as.vector(do.call(predict, c(list(fit, newdata = run_data[run_data$fold == k,]), predict_args)))
   }
   
-  return(result)
+  # Sort the predictions based on original data.frame
+  run_data = run_data[order(run_data[,"index"]),]
+  
+  # Save folds
+  df$fold = NA
+  df[!is.na(df[, ep]),]$fold = run_data$fold
+  
+  # Save predictions
+  df$pred = NA
+  df[!is.na(df[, ep]),]$pred = run_data$pred
+  
+  # Delete index
+  df$index = NULL
+  
+  return(df)
 }
