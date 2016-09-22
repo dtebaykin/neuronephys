@@ -1,4 +1,13 @@
-# runCV is a helper function for running a machine learning 10-fold cross-validation predicting one ephys property using some list of metadata
+# Created by: Dmitry Tebaykin
+# Hosted on: https://github.com/dtebaykin/neuronephys
+# Helper functions for running NeuroElectro prediction models
+
+# This function returns R^2 value, inputs are 2 numerical vectors of equal length: observed values and predicted
+get_R2 <- function(obs, pred) {
+  1 - sum((obs - pred)^2) / sum((obs - mean(obs))^2 )
+}
+
+# Helper function for running a machine learning 10-fold cross-validation predicting one ephys property using some list of metadata
 #
 # Inputs:
 #   df - data.frame, NeuroElectro dataframe (NA's in the metadata have to be dealt with), ephys property will be filtered by this function
@@ -11,14 +20,7 @@
 #
 # Output:
 #   the original input data.frame with added columns: fold, pred
-
-# This function returns R^2 value, inputs are 2 numerical vectors of equal length: observed values and predicted
-get_R2 <- function(obs, pred) {
-  1 - sum((obs - pred)^2) / sum((obs - mean(obs))^2 )
-}
-
-# Main function of the script - returns input data.frame with pred and fold columns
-runCV <- function(df, model, formula, model_args, predict_args, unique = T, seed = sample(floor(runif(1, 1, 100001)), 1)) {
+runCV <- function(df, model, formula, model_args = NULL, predict_args = NULL, unique = T, seed = sample(floor(runif(1, 1, 100001)), 1)) {
   set.seed(seed)
   
   # Misc
@@ -42,16 +44,11 @@ runCV <- function(df, model, formula, model_args, predict_args, unique = T, seed
     run_data$fold = rep(1:10, length.out = nrow(run_data))
   }
   
-  # Convert NeuronName column into a matrix where each NeuronName is a column, adjust the formula accordingly
-  rf_formula = gsub("NeuronName", "1", formula)
-  run_data$NeuronName = droplevels(run_data$NeuronName)
-
-  for(level in unique(run_data$NeuronName)){
-    run_data[paste("NeuronName", make.names(level), sep = "_")] <- ifelse(run_data$NeuronName == level, 1, 0)
-    rf_formula = paste(rf_formula, paste("NeuronName", make.names(level), sep = "_"), sep = "+")
-  }
-  run_data$NeuronName = NULL
-  formula = gsub("1\\+", "", rf_formula)
+  # convert NeuronName column into a matrix where each NT is a column and rows are 1/0 based on occurrence in that article
+  convertedList = convertNN(run_data, formula)
+  
+  run_data = convertedList[[1]]
+  formula = convertedList[[2]]
   
   # Run the model for each of 10 folds
   run_data$pred = NA
@@ -77,4 +74,45 @@ runCV <- function(df, model, formula, model_args, predict_args, unique = T, seed
   df$index = NULL
   
   return(df)
+}
+
+# Convert NeuronName column into a matrix where each NeuronName is a column, adjust the formula accordingly
+#
+# Inputs:
+#   df - data.frame with the NeuronName column
+#   formula - Character, formula where NeuronName should be replaced with all the new columns being added
+#
+# Output:
+#   list, first object - modified data.frame, second object - modified formula. Access via list[[1]] and list[[2]]
+convertNN <- function(df, formula) {
+  rf_formula = gsub("NeuronName", "1", formula)
+  df$NeuronName = droplevels(df$NeuronName)
+  
+  for(level in unique(df$NeuronName)){
+    df[paste("NeuronName", make.names(level), sep = "_")] <- ifelse(df$NeuronName == level, 1, 0)
+    rf_formula = paste(rf_formula, paste("NeuronName", make.names(level), sep = "_"), sep = "+")
+  }
+  df$NeuronName = NULL
+  formula = gsub("1\\+", "", rf_formula)
+  
+  return(list(df, formula))
+}
+
+# Run given model on the given dataset with the set parameters
+# Inputs:
+#   df - data.frame, input data to use for the model
+#   model - Character, formula to use for the model
+#   model_args - list, other parameters to be used
+#
+# Outputs:
+#   model object
+getModel <- function(df, model, formula, model_args = NULL) {
+  df = df[!is.na(df[, ep]),]
+  
+  convertedList = convertNN(df, formula)
+  run_data = convertedList[[1]]
+  formula = convertedList[[2]]
+  
+  fit = do.call(model, c(list(formula = as.formula(formula), data = run_data), model_args) )
+  return(fit)
 }
